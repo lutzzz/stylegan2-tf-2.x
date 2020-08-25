@@ -210,8 +210,8 @@ def test_generator():
     # finalize model (build)
     test_latent = np.ones((1, g_params['z_dim']), dtype=np.float32)
     test_labels = np.ones((1, g_params['labels_dim']), dtype=np.float32)
-    _ = g_clone([test_latent, test_labels], training=False)
-    _ = g_clone([test_latent, test_labels], training=True)
+    _ = g_clone([test_latent, None], training=False)
+    _ = g_clone([test_latent, None], training=True)
 
     # restore
     ckpt_dir = './official-converted'
@@ -226,7 +226,7 @@ def test_generator():
     rnd = np.random.RandomState(seed)
     latents = rnd.randn(1, g_params['z_dim'])
     latents = latents.astype(np.float32)
-    image_out, _ = g_clone([latents, test_labels], training=False, truncation_psi=0.5)
+    image_out, _ = g_clone([latents, None], training=False, truncation_psi=1.0)
     image_out = postprocess_images(image_out)
     image_out = image_out.numpy()
     Image.fromarray(image_out[0], 'RGB').save('seed{}-restored.png'.format(seed))
@@ -234,7 +234,7 @@ def test_generator():
 
 
 def main():
-    convert_official_weights()
+    #convert_official_weights()
     test_generator()
     return
 

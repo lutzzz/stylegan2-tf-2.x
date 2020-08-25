@@ -85,7 +85,7 @@ class Mapping(tf.keras.layers.Layer):
 
 
 class SynthesisConstBlock(tf.keras.layers.Layer):
-    def __init__(self, fmaps, res, **kwargs):
+    def __init__(self, fmaps, res, randomize_noise=True, **kwargs):
         super(SynthesisConstBlock, self).__init__(**kwargs)
         assert res == 4
         self.res = res
@@ -96,7 +96,7 @@ class SynthesisConstBlock(tf.keras.layers.Layer):
         # conv block
         self.conv = FusedModConv(fmaps=self.fmaps, kernel=3, gain=self.gain, lrmul=self.lrmul, style_fmaps=self.fmaps,
                                  demodulate=True, up=False, down=False, resample_kernel=[1, 3, 3, 1], name='conv')
-        self.apply_noise = Noise(name='noise')
+        self.apply_noise = Noise(name='noise', randomize_noise=randomize_noise)
         self.apply_bias = Bias(lrmul=self.lrmul, name='bias')
         self.leaky_relu = LeakyReLU(name='lrelu')
 
@@ -132,7 +132,7 @@ class SynthesisConstBlock(tf.keras.layers.Layer):
 
 
 class SynthesisBlock(tf.keras.layers.Layer):
-    def __init__(self, in_ch, fmaps, res, **kwargs):
+    def __init__(self, in_ch, fmaps, res, randomize_noise=True, **kwargs):
         super(SynthesisBlock, self).__init__(**kwargs)
         self.in_ch = in_ch
         self.fmaps = fmaps
@@ -143,14 +143,14 @@ class SynthesisBlock(tf.keras.layers.Layer):
         # conv0 up
         self.conv_0 = FusedModConv(fmaps=self.fmaps, kernel=3, gain=self.gain, lrmul=self.lrmul, style_fmaps=self.in_ch,
                                    demodulate=True, up=True, down=False, resample_kernel=[1, 3, 3, 1], name='conv_0')
-        self.apply_noise_0 = Noise(name='noise_0')
+        self.apply_noise_0 = Noise(name='noise_0', randomize_noise=randomize_noise)
         self.apply_bias_0 = Bias(lrmul=self.lrmul, name='bias_0')
         self.leaky_relu_0 = LeakyReLU(name='lrelu_0')
 
         # conv block
         self.conv_1 = FusedModConv(fmaps=self.fmaps, kernel=3, gain=self.gain, lrmul=self.lrmul, style_fmaps=self.fmaps,
                                    demodulate=True, up=False, down=False, resample_kernel=[1, 3, 3, 1], name='conv_1')
-        self.apply_noise_1 = Noise(name='noise_1')
+        self.apply_noise_1 = Noise(name='noise_1', randomize_noise=randomize_noise)
         self.apply_bias_1 = Bias(lrmul=self.lrmul, name='bias_1')
         self.leaky_relu_1 = LeakyReLU(name='lrelu_1')
 
@@ -183,7 +183,7 @@ class SynthesisBlock(tf.keras.layers.Layer):
 
 
 class Synthesis(tf.keras.layers.Layer):
-    def __init__(self, resolutions, featuremaps, name, **kwargs):
+    def __init__(self, resolutions, featuremaps, name, randomize_noise=True, **kwargs):
         super(Synthesis, self).__init__(name=name, **kwargs)
         self.resolutions = resolutions
         self.featuremaps = featuremaps
@@ -191,7 +191,8 @@ class Synthesis(tf.keras.layers.Layer):
 
         # initial layer
         res, n_f = resolutions[0], featuremaps[0]
-        self.initial_block = SynthesisConstBlock(fmaps=n_f, res=res, name='{:d}x{:d}/const'.format(res, res))
+        self.initial_block = SynthesisConstBlock(fmaps=n_f, res=res, name='{:d}x{:d}/const'.format(res, res), 
+                                                 randomize_noise=randomize_noise)
         self.initial_torgb = ToRGB(in_ch=n_f, name='{:d}x{:d}/ToRGB'.format(res, res))
 
         # stack generator block with lerp block
@@ -199,7 +200,7 @@ class Synthesis(tf.keras.layers.Layer):
         self.blocks = list()
         self.torgbs = list()
         for res, n_f in zip(self.resolutions[1:], self.featuremaps[1:]):
-            self.blocks.append(SynthesisBlock(in_ch=prev_n_f, fmaps=n_f, res=res,
+            self.blocks.append(SynthesisBlock(in_ch=prev_n_f, fmaps=n_f, res=res, randomize_noise=randomize_noise, 
                                               name='{:d}x{:d}/block'.format(res, res)))
             self.torgbs.append(ToRGB(in_ch=n_f, name='{:d}x{:d}/ToRGB'.format(res, res)))
             prev_n_f = n_f
@@ -249,13 +250,14 @@ class Generator(tf.keras.Model):
         self.featuremaps = g_params['featuremaps']
         self.w_ema_decay = g_params['w_ema_decay']
         self.style_mixing_prob = g_params['style_mixing_prob']
+        self.randomize_noise = g_params.get("randomize_noise", True)
 
         self.n_broadcast = len(self.resolutions) * 2
         self.mixing_layer_indices = np.arange(self.n_broadcast)[np.newaxis, :, np.newaxis]
 
         self.g_mapping = Mapping(self.w_dim, self.labels_dim, self.n_mapping, name='g_mapping')
         self.broadcast = tf.keras.layers.Lambda(lambda x: tf.tile(x[:, np.newaxis], [1, self.n_broadcast, 1]))
-        self.synthesis = Synthesis(self.resolutions, self.featuremaps, name='g_synthesis')
+        self.synthesis = Synthesis(self.resolutions, self.featuremaps, name='g_synthesis', randomize_noise=self.randomize_noise)
 
     def build(self, input_shape):
         # w_avg

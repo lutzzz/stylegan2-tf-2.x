@@ -122,15 +122,23 @@ class LabelEmbedding(tf.keras.layers.Layer):
 
 
 class Noise(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
+    def __init__(self, randomize_noise=True, **kwargs):
         super(Noise, self).__init__(**kwargs)
+        self.randomize_noise = randomize_noise
 
     def build(self, input_shape):
         self.noise_strength = tf.Variable(initial_value=0.0, dtype=tf.dtypes.float32, trainable=True, name='w')
+        if not self.randomize_noise:
+            shape = input_shape.as_list() # [minibatch, c, h, w]
+            noise = np.random.RandomState(42).randn(1, 1, *shape[2:]) # [1, 1, h, w]
+            self.noise = tf.constant(noise, dtype=tf.dtypes.float32) 
 
     def call(self, x, training=None, mask=None):
-        x_shape = tf.shape(x)
-        noise = tf.random.normal(shape=(x_shape[0], 1, x_shape[2], x_shape[3]), dtype=tf.dtypes.float32)
+        if self.randomize_noise:
+            x_shape = tf.shape(x)
+            noise = tf.random.normal(shape=(x_shape[0], 1, x_shape[2], x_shape[3]), dtype=tf.dtypes.float32)
+        else:
+            noise = self.noise
 
         x += noise * self.noise_strength
         return x
